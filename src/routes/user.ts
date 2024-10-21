@@ -1,11 +1,17 @@
-import express, { Request, Response, NextFunction } from "express";
+import express, { type Request, type Response, type NextFunction } from "express";
 import User from "../models/User"; // Assuming a User model is available
 import bcrypt from "bcrypt"; // For password hashing
-import jwt from "jsonwebtoken"; // For JWT authentication
+import jwt, { type JwtPayload } from "jsonwebtoken"; // For JWT authentication
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret"; // Secret key for signing JWTs
 let _token: string; // Variable to store the JWT token
+
+// Helper function to decode JWT and return JwtPayload or null
+const decodeJwt = (token: string): JwtPayload | null => {
+  const payload = jwt.decode(token);
+  return typeof payload === 'object' && payload !== null ? (payload as JwtPayload) : null;
+};
 
 // Route to register a new user
 router.post("/register", async (req: Request, res: Response): Promise<void> => {
@@ -20,31 +26,6 @@ router.post("/register", async (req: Request, res: Response): Promise<void> => {
     res.status(500).json({ message: "Error creating user" }); // Respond with an error message on failure
   }
 });
-
-// Middleware to authenticate the JWT token
-const authenticateToken = (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): void => {
-  const authHeader = req.headers["authorization"]; // Get the authorization header
-  const token = authHeader && authHeader.split(" ")[1]; // Extract the token
-
-  if (!token) {
-    res.sendStatus(401); // Unauthorized if token is not present
-    return;
-  }
-
-  // Verify the JWT token
-  jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
-    if (err) {
-      res.sendStatus(403); // Forbidden if token is invalid
-      return;
-    }
-    req.user = user; // Attach the user information to the request
-    next(); // Proceed to the next middleware
-  });
-};
 
 // Route to log in a user with clientRequestId
 router.post(
@@ -83,12 +64,17 @@ router.get(
   "/:clientRequestId/verify",
   (req: Request, res: Response): void => {
     const { clientRequestId } = req.params; // Extract clientRequestId from route parameters
-    console.log(`${clientRequestId} made a request.`) // Log the request
-    const payload = jwt.decode(_token); // Decode the JWT token
+    console.log(`${clientRequestId} made a request.`); // Log the request
+    const payload = decodeJwt(_token); // Decode the JWT token
+
+    if (payload === null) {
+      res.status(400).json({ message: "Empty Data..." }); // Handle null payload case
+      return;
+    }
 
     // Check if the clientRequestId in the token matches the one in the request
     if (clientRequestId === payload.clientRequestId) {
-      console.log("ClientRequestId verified successfully.")
+      console.log("ClientRequestId verified successfully.");
       res.status(200).json({ _token }); // Respond with the token if verified
     } else {
       console.log("Invalid ClientRequestId.");
@@ -102,8 +88,12 @@ router.get(
   "/:token/profile",
   async (req: Request, res: Response): Promise<void> => {
     try {
-      const payload = jwt.decode(req.params.token); // Decode the token from the request parameters
-      const user = await User.findByPk(payload?.id); // Find the user by ID from the payload
+      const payload = decodeJwt(req.params.token); // Decode the token from the request parameters
+      if (!payload) {
+        res.status(403).json({ message: "Invalid token." });
+        return;
+      }
+      const user = await User.findByPk(payload.id); // Find the user by ID from the payload
       if (user) {
         res.json({ id: user.id, username: user.username, highScore: user.highScore }); // Respond with user data
       } else {
@@ -119,20 +109,18 @@ router.get(
 // Route to update the user's high score
 router.patch(
   "/:token/highscore",
-  // Middleware to verify the token
   async (req: Request, res: Response): Promise<void> => {
     const { token } = req.params; // Extract token from route parameters
     const { highScore } = req.body; // Extract high score from request body
 
     try {
-      const payload = jwt.decode(token); // Decode the token
-      console.log(payload);
+      const payload = decodeJwt(token); // Decode the token
       if (!payload) {
-        res.status(403).json({ message: "Invalid ClientRequestId." });
+        res.status(403).json({ message: "Invalid token." });
         return;
       }
-
-      const user = await User.findByPk(payload?.id); // Find the user by ID from the payload
+      
+      const user = await User.findByPk(payload.id); // Find the user by ID from the payload
       if (user) {
         user.highScore = highScore; // Update the highScore
         await user.save(); // Save the changes in the database

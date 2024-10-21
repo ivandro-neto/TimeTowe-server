@@ -4,7 +4,7 @@ import dotenv from 'dotenv'; // Import dotenv for environment variable managemen
 dotenv.config(); // Load environment variables from .env file into process.env
 
 // Initialize a new Sequelize instance
-const sequelize = new Sequelize(process.env.DATABASE_URL!, {
+const sequelize = new Sequelize(process.env.DATABASE_URL||"", {
   dialect: 'postgres', // Specify the database dialect (PostgreSQL in this case)
   logging: false, // Disable logging of SQL queries (set to true to enable)
 });
